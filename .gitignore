@@ -1,0 +1,27 @@
+# runtime artifacts
+logs/
+*.log
+
+# kdb/q
+*.q_
+
+# python
+__pycache__/
+*.py[cod]
+
+# tickerplant replay logs (ingest/ TP writes sym_<date>)
+ingest/sym_*
+
+# table dumps saved to project root for ad-hoc analysis (CSV, table-named)
+/quote_norm
+/leaderlag_events
+/leadership_pairs
+/leadership_score
+/leadership_session
+
+# stray kdb sym/enum file from running q in the repo root
+/sym
+
+# demo repo: no captured data or preview artifacts
+/data/
+README_preview.html
