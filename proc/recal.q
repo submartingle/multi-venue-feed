@@ -29,7 +29,7 @@ if[`windowHr in key opt; .recal.windowHr:"F"$first opt`windowHr];
 
 // poll: run only when the interval has elapsed. (q can't re-enter .z.ts mid-run, so no extra guard
 // needed.) Schedule the next run BEFORE running so a long solve doesn't compound the cadence.
-.z.ts:{[t]
+.z.ts:{
   if[.z.p < .recal.nextRun; :()];
   .recal.nextRun:.z.p + .recal.intervalNs;
   .recal.last:@[.recal.run; 1b; {[e] -1 "  recal run error: ",e; ()}];
