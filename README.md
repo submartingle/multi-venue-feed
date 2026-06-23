@@ -33,6 +33,16 @@ venue where price is made.
 
 ---
 
+## Live dashboard
+
+A `rich` terminal UI (`scripts/dashboard.py`) attaches to the live engine over IPC and renders
+table counts, leadership scores (with regime), per-venue feed health, the three-scorer pipeline,
+leg freshness and q-workspace memory — refreshed on a timer, read-only.
+
+![Live dashboard](docs/img/dashboard.png)
+
+---
+
 ## Architecture
 
 ```
