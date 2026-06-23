@@ -133,4 +133,6 @@ findings, captured data, and the full research history are kept in a separate pr
 Parts of the build were developed with AI coding agents (Claude Code) under a test-and-verify
 workflow.
 
-Licensed under the MIT License — see [`LICENSE`](LICENSE).
+© 2026 Paul Jin. All rights reserved. Published as a portfolio / architecture showcase — you are
+welcome to read and reference it, but no license to use, copy, modify, or redistribute the code is
+granted.
