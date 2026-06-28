@@ -39,14 +39,14 @@
   {[a;b] b-a};                // absolute
   {[a;b] log b%a});           // log
 
-.move.empty:`idx`dir`size!(`long$();`long$();`float$());   // no-event result
+.move.empty:`idx`dir`size!(`long$();`short$();`float$());   // no-event result
 
 // --- tickwise: adjacent-tick return (vectorised) ----------------------------
 .move.tickwise:{[delta;thr;t;v]
   if[2>count v; :.move.empty];
   dd:delta[prev v; v];                          // first elem: prev=0n -> dd 0n -> never fires
   f:where thr<=abs dd;
-  `idx`dir`size!(f; `long$signum dd f; dd f)};
+  `idx`dir`size!(f; `short$signum dd f; dd f)};
 
 // --- cumulative (CUSUM from last fired value) -------------------------------
 // State carried by the scan: (base; dir; size). dir!=0 marks a fire at that tick.
@@ -56,7 +56,7 @@
 .move.cumulative:{[delta;thr;t;v]
   if[2>count v; :.move.empty];
   r:(.move.cumStep[delta;thr])\[(first v; 0; 0n); v];   // sequential: baseline only moves on a fire
-  d:`long$r[;1];
+  d:`short$r[;1];
   f:where d<>0;
   `idx`dir`size!(f; d f; r[;2] f)};
 
@@ -68,7 +68,7 @@
   if[2>count v; :.move.empty];
   j:0|t bin t-winNs;                             // baseline = tick at/just before window start
   dd:delta[v j; v];
-  d:`long$?[thr<=abs dd; signum dd; 0];
+  d:`short$?[thr<=abs dd; signum dd; 0];
   e:.move.dedup d;
   `idx`dir`size!(e; d e; dd e)};
 
@@ -83,7 +83,7 @@
 .move.cumstale:{[delta;thr;winNs;t;v]
   if[2>count v; :.move.empty];
   r:(.move.staleStep[delta;thr;winNs])\[(first v; first t; 0; 0n); flip(t;v)];
-  d:`long$r[;2];
+  d:`short$r[;2];
   f:where d<>0;
   `idx`dir`size!(f; d f; r[;3] f)};
 
@@ -103,8 +103,8 @@
 // State: (mnT;mnV;mxT;mxV;dir;size). On a fire, dir!=0 and the deques collapse to the firing tick.
 .move.wrvStep:{[delta;thr;winNs; st; tx]
   t:tx 0; x:tx 1; lo:t-winNs;
-  k:st[1]<x; mnT:(st[0] where k),t; mnV:(st[1] where k),x; g:mnT>=lo; mnT@:g:where g; mnV@:g; // min-deque
-  k:st[3]>x; mxT:(st[2] where k),t; mxV:(st[3] where k),x; g:mxT>=lo; mxT@:g:where g; mxV@:g; // max-deque
+  k:st[1]<x; mnT:(st[0] where k),t; mnV:(st[1] where k),x; mnT@:g:where mnT>=lo; mnV@:g; // min-deque
+  k:st[3]>x; mxT:(st[2] where k),t; mxV:(st[3] where k),x; mxT@:g:where mxT>=lo; mxV@:g; // max-deque
   up:delta[first mnV; x];                              // rise from window low  (>=0)
   dn:delta[x; first mxV];                              // fall from window high (>=0 magnitude)
   $[thr<=up; (enlist t;enlist x;enlist t;enlist x;  1;     up);   // fire UP   -> reset deques to this tick
@@ -114,7 +114,7 @@
 .move.winreset:{[delta;thr;winNs;t;v]
   if[1>count v; :.move.empty];
   r:(.move.wrvStep[delta;thr;winNs])\[.move.wrSeed; flip(t;v)];
-  d:`long$r[;4];
+  d:`short$r[;4];
   f:where d<>0;
   `idx`dir`size!(f; d f; r[;5] f)};              // scan ran over all ticks -> f indexes v directly
 
