@@ -84,7 +84,7 @@
   mnV0:row`mnV0;                                          // cold start if no real carried deque (lj-null/empty)
   seed:$[(0=count mnV0) or not 9h=type mnV0; .move.wrSeed; (row`mnT0; mnV0; row`mxT0; row`mxV0; 0; 0n)];
   r:(.move.wrvStep[delta; row`thr; winNs])\[seed; flip(clk; v)];
-  d:`long$r[;4]; f:where d<>0; lastS:r[(count r)-1];      // fires + final deque state
+  d:`long$r[;4]; f:where d<>0; lastS:last r;              // fires + final deque state
   `sym`venue`inst`recvTs`eventTs`mid`moveBps`direction`mnT`mnV`mxT`mxV!
     (row`sym; row`venue; row`inst; row[`rTs] f; row[`eTs] f; v f;
      10000*r[f;5]; ?[0<d f;`up;`down]; lastS 0; lastS 1; lastS 2; lastS 3)};
