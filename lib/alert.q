@@ -21,21 +21,21 @@
 .alert.out0:([] ts:`timestamp$(); sym:`symbol$(); venue:`symbol$(); inst:`symbol$();
   alertType:`symbol$(); msg:`symbol$());
 
-// Detect stale-follower alerts as of `asOf`, judging leads in (loTs, asOf-staleWin].
+// Detect stale-follower alerts as of `curTs`, judging leads in (loTs, curTs-staleWin].
 //   moves : qualifying-move history (sym,venue,inst,recvTs,direction) — .comove.hist shape
 //   legs  : active comparable leg universe (sym,venue,inst) — e.g. 0!.feed.leg keys
 //   loTs  : judge only leads STRICTLY AFTER this (null = no bound, full history). A lead
 //           is judged exactly once — when its bracket closes — by advancing loTs; judging
 //           ALL mature leads against the full history every tick is O(moves^2) and
 //           collapsed the bridge at ~20k session moves (2026-06-11, two stalls).
-//   asOf  : current time. Only MATURE leads (recvTs<=asOf-staleWin) are judged, so the
+//   curTs : current time. Only MATURE leads (recvTs<=curTs-staleWin) are judged, so the
 //           follow window has fully elapsed and a non-follow is real, not just pending.
 // Returns rows shaped like `alerts`.
-.alert.stale:{[moves; legs; loTs; asOf]
+.alert.stale:{[moves; legs; loTs; curTs]
   if[0=count moves; :.alert.out0];
   // mature qualifying leads in the not-yet-judged window
   ld:select sym, leadVenue:venue, leadInst:inst, leadRecvTs:recvTs, direction
-    from moves where recvTs<=asOf-.alert.staleWin, (null loTs)|recvTs>loTs;
+    from moves where recvTs<=curTs-.alert.staleWin, (null loTs)|recvTs>loTs;
   if[0=count ld; :.alert.out0];
   // expand each lead against comparable sibling legs of the same sym
   c:ej[`sym; ld; select sym, followVenue:venue, followInst:inst from legs];
@@ -51,7 +51,7 @@
   // one alert per stale (sibling, lead-move). msg kept LOW-cardinality (leg+dir) to
   // avoid symbol-interning bloat — high-cardinality strings interned as symbols live
   // forever (CLAUDE.md s6); detailed context belongs in dedicated columns, not msg.
-  select ts:asOf, sym, venue:followVenue, inst:followInst, alertType:`stale,
+  select ts:curTs, sym, venue:followVenue, inst:followInst, alertType:`stale,
     msg:`$ {x,"/",y,"_",z}'[string leadVenue; string leadInst; string direction]
     from s };
 
@@ -79,6 +79,6 @@
   // whole .z.ts chain on first live activation (2026-06-11)
   k:`sym`venue`inst`alertType`msg;
   r:r where not (k#r) in k#alerts;
-  r:distinct r;   // two same-tick lead-moves can emit identical rows (ts:asOf is shared)
+  r:distinct r;   // two same-tick lead-moves can emit identical rows (ts:curTs is shared)
   if[count r; `alerts insert r];
   };
