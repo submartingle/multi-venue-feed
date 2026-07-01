@@ -16,6 +16,7 @@
 
 // Config resolved at load.
 .alert.staleWin:`timespan$`long$1e6*@[value; `.cfg.staleWindowMs; 1000f];
+.alert.cooldown:`timespan$`long$1e6*@[value; `.cfg.staleCooldownMs; 300000f];
 
 // Empty alert template (matches schema/output.q `alerts`).
 .alert.out0:([] ts:`timestamp$(); sym:`symbol$(); venue:`symbol$(); inst:`symbol$();
@@ -59,7 +60,11 @@
 .alert.lastJudged:0Np;
 
 // Insert new stale-follower alerts into `alerts`, de-duplicating by
-// (sym,venue,inst,alertType,msg) so the same condition doesn't re-fire every timer tick.
+// (sym,venue,inst,alertType,msg) against alerts younger than staleCooldownMs — the same
+// condition is suppressed while its last alert is fresh, then RE-ARMS. Episode semantics:
+// recurring staleness keeps producing rows ("N stale alerts this hour" is meaningful),
+// unlike an all-history de-dup which saturates the finite combo universe (60 rows at
+// 3 venues x 5 syms) once per session and then goes silent forever.
 // INCREMENTAL: each tick judges only the leads whose bracket closed since the last tick,
 // against only the moves that can fall in those brackets — O(new moves) per tick, where
 // the previous full-history form was O(moves^2) and ground the bridge to ~1% throughput
@@ -78,7 +83,7 @@
   // columns of a table throws 'length (zero-column value part), which aborted the
   // whole .z.ts chain on first live activation (2026-06-11)
   k:`sym`venue`inst`alertType`msg;
-  r:r where not (k#r) in k#alerts;
+  r:r where not (k#r) in k#select from alerts where ts>windowEnd-.alert.cooldown;
   r:distinct r;   // two same-tick lead-moves can emit identical rows (ts:curTs is shared)
   if[count r; `alerts insert r];
   };

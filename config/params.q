@@ -156,6 +156,11 @@
 // Stale-price: a lead move with no follower within this window flags the
 // non-moving sibling leg as potentially stale.
 .cfg.staleWindowMs:1000f;
+// Re-arm cooldown for stale-follower de-dup: the same (leg, lead, direction) condition
+// is suppressed only within this window, then may fire again as a new episode. Keeps the
+// alert stream live (recurring staleness stays visible) instead of saturating at the
+// finite combo universe (venues x leads x directions x syms) once per session.
+.cfg.staleCooldownMs:300000f;          // 5 min between repeat alerts for the same condition
 
 // --- Feed-health diagnostics (B2, lib/health.q) ------------------------------
 // Per-leg feed plumbing health, distinct from B1's move-based stale-FOLLOWER rule:
@@ -163,7 +168,7 @@
 // FEED is unhealthy" (silent, rejecting ticks, or clock-uncalibratable) regardless of
 // any move. Metrics snapshot -> feed_health (rebuilt on the timer); threshold breaches
 // -> `alerts`, EDGE-TRIGGERED (fire on onset, re-arm on recovery — one alert per
-// episode, unlike B1's once-per-session de-dup, because feed faults recover and recur).
+// episode; B1's stale-follower de-dup re-arms on a time cooldown instead, staleCooldownMs).
 .cfg.healthWindow:0D00:01:00.000000000;  // trailing window for tick/invalid-rate metrics
 .cfg.healthQuietMs:30000f;     // `feedstale: leg silent (no ACCEPTED tick) longer than this.
                                // On the L2 feeds every leg ticks multiple times/sec; 30s of
