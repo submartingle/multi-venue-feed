@@ -90,23 +90,26 @@
 // Co-movement count + lag sum for one ordered leg pair within a (sym,direction)
 // group. la/lb: sorted lead/follow move times (ns longs). Dns = dead-band (ns):
 // only leads at least Dns before the follow count. Returns (C; lagSumNs). Window is
-// [t_B-W, t_B-D) — lower inclusive, upper exclusive — matching the matcher.
+// [t_B-W, t_B-D] — BOTH ends inclusive (gap in [D,W]), matching the matcher's
+// clkTs>=curT-followWin and (curT-clkTs)>=db. Exact gap==D/W ties are real on
+// ms-grained venue stamps, so the +1 below (binr gives # elements < x; we need <= x
+// on the upper bound) keeps the two counts consistent.
 .comove.pairCount:{[Wns;Dns;la;lb]
-  hi:la binr lb-Dns;              // # lead times < (follow - D)  (dead-band upper bound)
+  hi:la binr 1+lb-Dns;            // # lead times <= (follow - D)  (dead-band upper bound)
   lo:la binr lb-Wns;              // # lead times < (follow - W)
   cnt:hi-lo;                      // lead moves in [t_B-W, t_B-D) per follow move
   PA:0,sums la;                   // prefix sums of lead times (PA[k]=sum of first k)
   (sum cnt; sum (cnt*lb)-PA[hi]-PA[lo])};   // (total matches; sum of (t_B - t_A))
 
-// Build the base-rate-corrected directed-pair table over the move history in
-// (lo; windowEnd]. The window is a parameter so the same machinery serves both the
-// trailing-window score (.comove.calc) and the cumulative session score
-// (.comove.calcSession). Returns a table with the .comove.pairs0 columns.
-.comove.calcOver:{[lo; windowEnd]
+// Build the base-rate-corrected directed-pair table over the moves in `hist` in
+// (lo; windowEnd], counting with dead-band Dns (ns). History + dead-band are PARAMETERS
+// so a multi-scorer process (proc/live_xvenue.q) scores each clock's own buffer directly
+// — no global swap/restore, so an aborted timer pass cannot leave .comove.hist pointing
+// at another scorer's buffer. Returns a table with the .comove.pairs0 columns.
+.comove.calcOverOn:{[hist; Dns; lo; windowEnd]
   Wns:`long$.leadlag.followWin;                    // follow window (ns)
   Wms:1e-6*Wns;                                    // follow window (ms) — for the E17 kernel
-  Dns:.skew.deadBandNs;                            // effective dead-band (ns) — same as the matcher
-  h:select sym,venue,inst,recvTs,eventTs,direction from .comove.hist where recvTs>=lo, recvTs<=windowEnd;
+  h:select sym,venue,inst,recvTs,eventTs,direction from hist where recvTs>=lo, recvTs<=windowEnd;
   if[not count h; :0#.comove.pairs0];
   // tns = the configured lead-lag clock (exchange-time by default); window membership
   // is still by recvTs (arrival). Pick the clock column in PLAIN q (not inside qsql —
@@ -150,6 +153,10 @@
   p:update pValue:.comove.pois1'[obs;expected], ts:windowEnd from p;
   `ts`sym`leadVenue`leadInst`followVenue`followInst`direction`nLead`nFollow`obs`obsK`expected`excess`lagSumMs`avgLagMs`pValue#p};
 
+// Original signature over the shared quote state (.comove.hist + the matcher's
+// dead-band) — the form every offline sim and the quote scorer use.
+.comove.calcOver:{[lo; windowEnd] .comove.calcOverOn[.comove.hist; .skew.deadBandNs; lo; windowEnd]};
+
 // Trailing-window directed matrix (the "who leads NOW" view): look back .comove.window.
 .comove.calc:{[windowEnd] .comove.calcOver[windowEnd-.comove.window; windowEnd]};
 
@@ -157,3 +164,6 @@
 // history. The coincidence baseline (n_A/T) uses T = actual span of retained moves,
 // so accumulating evidence tightens significance rather than diluting the rate.
 .comove.calcSession:{[windowEnd] .comove.calcOver[windowEnd-.comove.retain; windowEnd]};
+
+// Session matrix over a SUPPLIED history + dead-band (the multi-scorer form).
+.comove.calcSessionOn:{[hist; Dns; windowEnd] .comove.calcOverOn[hist; Dns; windowEnd-.comove.retain; windowEnd]};

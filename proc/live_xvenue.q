@@ -68,9 +68,9 @@ trades:([] exch_us:`long$(); trade_us:`long$(); recv_us:`long$(); sym:`symbol$()
 .live.venueOf:{[s] ?[s like "*-USDT"; `OKX; ?[s like "*-USD"; `COINBASE; `BINANCE]]};
 
 // --- trade-clock move buffers (same schema as .comove.hist) -------------------
-// Written by .live.updTrades (directly, not via .comove.record). Evicted + swapped
-// into .comove.hist on each timer tick for scoring, then restored. Safe because
-// q is single-threaded and .z.ts runs to completion before any ingest resumes.
+// Written by .live.updTrades (directly, not via .comove.record). Evicted on each
+// timer tick and passed straight to .comove.calcSessionOn — each scorer reads its
+// own buffer, no .comove.hist swap (an aborted pass can't cross-contaminate).
 .tr.histFlow :([] sym:`symbol$(); venue:`symbol$(); inst:`symbol$();
   recvTs:`timestamp$(); eventTs:`timestamp$(); direction:`symbol$());
 .tr.histPrice:([] sym:`symbol$(); venue:`symbol$(); inst:`symbol$();
@@ -121,31 +121,26 @@ upd:{[t;x]
 
 // --- analytics timer (C8): three-scorer pass + regime + health + snapshot ----
 // Three independent scorers (quote / trade-flow / trade-price) share the comove+score
-// machinery via a buffer+dead-band swap per pass. Safe: .z.ts is single-threaded and
-// runs to completion before any ingest message can touch .comove.hist or .tr.hist*.
+// machinery. The trade scorers pass their own buffer + dead-band directly to
+// .comove.calcSessionOn — .comove.hist / .skew.deadBandNs are never reassigned, so an
+// error anywhere in the pass cannot leave the quote state pointing at a trade buffer.
 .live.snapEvery:0D00:01:00 * @[value;`.cfg.snapshotMins;60];
 .live.lastSnap:0Np;
 .z.ts:{
   curT:.z.p;
   .skew.calc[];                                         // refresh clock-skew offsets (Item 5)
-  // --- 1. QUOTE scorer (.comove.hist = quote buffer, fed by .feed.upd) ---------
-  // .skew.deadBandNs already set to 100ms by .skew.calc[].
-  qDbNs:.skew.deadBandNs;                               // save before any swap
+  // --- 1. QUOTE scorer (.comove.hist = quote buffer, fed by .feed.upd; dead-band
+  //        = .skew.deadBandNs, already refreshed by .skew.calc[]) ---------------
   .score.calc curT;                                     // trailing window -> leadership_score
   `leadership_session set .score.fromPairs[.comove.calcSession curT; curT];
   // --- 2. TRADE-FLOW scorer (imbalance bars, dead-band 50ms) -------------------
-  qHist:.comove.hist;                                   // save quote buffer before swap
   .tr.histFlow:select from .tr.histFlow where recvTs>=curT-.tr.retain;
-  .comove.hist:.tr.histFlow;
-  .skew.deadBandNs:.tr.dbNs;
-  `leadership_session_tflow set .score.fromPairs[.comove.calcSession curT; curT];
+  `leadership_session_tflow set
+    .score.fromPairs[.comove.calcSessionOn[.tr.histFlow; .tr.dbNs; curT]; curT];
   // --- 3. TRADE-PRICE scorer (trade-print winreset, same 50ms dead-band) -------
   .tr.histPrice:select from .tr.histPrice where recvTs>=curT-.tr.retain;
-  .comove.hist:.tr.histPrice;
-  `leadership_session_tprice set .score.fromPairs[.comove.calcSession curT; curT];
-  // --- restore quote buffer (.comove.record must write here between ticks) ------
-  .comove.hist:qHist;
-  .skew.deadBandNs:qDbNs;
+  `leadership_session_tprice set
+    .score.fromPairs[.comove.calcSessionOn[.tr.histPrice; .tr.dbNs; curT]; curT];
   // --- regime, health, evict, snapshot -----------------------------------------
   .regime.calc curT;
   .alert.calc  curT;
