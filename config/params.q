@@ -12,7 +12,9 @@
 // (recal keeps updating moveThresholdBps; this rides on top). 1 = no change; fully reversible.
 .cfg.moveThresholdMult:1f;
 // Resolve the threshold for a sym (override else default), scaled by the global multiplier.
-.cfg.threshold:{[s] t:.cfg.moveThresholdBps s; .cfg.moveThresholdMult*$[null t; .cfg.moveThresholdDefault; t]};
+// VECTORISED (?[] not $[]): pass a whole sym column, no `each` — but still reads
+// .cfg.moveThresholdBps at call time, so recal's hot-push takes effect at once.
+.cfg.threshold:{[s] t:.cfg.moveThresholdBps s; .cfg.moveThresholdMult*?[null t; .cfg.moveThresholdDefault; t]};
 
 // Detector mode (lib/feed.q). `tickwise = single adjacent-tick return >= thr (legacy default,
 // granularity-biased across venues). `cumstale = cumulative cross within moveWinMs (the mode the

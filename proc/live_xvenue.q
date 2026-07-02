@@ -68,15 +68,19 @@ trades:([] exch_us:`long$(); trade_us:`long$(); recv_us:`long$(); sym:`symbol$()
 .live.venueOf:{[s] ?[s like "*-USDT"; `OKX; ?[s like "*-USD"; `COINBASE; `BINANCE]]};
 
 // --- trade-clock move buffers (same schema as .comove.hist) -------------------
-// Written by .live.updTrades (directly, not via .comove.record). Evicted on each
-// timer tick and passed straight to .comove.calcSessionOn — each scorer reads its
-// own buffer, no .comove.hist swap (an aborted pass can't cross-contaminate).
+// Written by .live.updTrades (directly, not via .comove.record) and passed straight to
+// .comove.calcSessionOn — each scorer reads its own buffer, no .comove.hist swap (an
+// aborted pass can't cross-contaminate). Eviction is a MEMORY GUARD only (calcSessionOn
+// windows by recvTs itself, so stale rows never score) — run at a coarse cadence, not
+// per timer tick: copy-filtering a session-scale flow buffer every second is pure churn.
 .tr.histFlow :([] sym:`symbol$(); venue:`symbol$(); inst:`symbol$();
   recvTs:`timestamp$(); eventTs:`timestamp$(); direction:`symbol$());
 .tr.histPrice:([] sym:`symbol$(); venue:`symbol$(); inst:`symbol$();
   recvTs:`timestamp$(); eventTs:`timestamp$(); direction:`symbol$());
 .tr.dbNs :`long$50*1000000;           // 50ms dead-band for trade clock (native stamps)
 .tr.retain:.comove.retain;            // same 12h session retention as the quote scorer
+.tr.evictEvery:0D00:01;               // eviction cadence (memory guard, see above)
+.tr.lastEvict:0Np;
 
 // Output tables for the two trade-clock session scores — same shape as leadership_session.
 leadership_session_tflow :0#leadership_session;
@@ -133,12 +137,14 @@ upd:{[t;x]
   //        = .skew.deadBandNs, already refreshed by .skew.calc[]) ---------------
   .score.calc curT;                                     // trailing window -> leadership_score
   `leadership_session set .score.fromPairs[.comove.calcSession curT; curT];
-  // --- 2. TRADE-FLOW scorer (imbalance bars, dead-band 50ms) -------------------
-  .tr.histFlow:select from .tr.histFlow where recvTs>=curT-.tr.retain;
+  // --- 2/3. TRADE scorers (imbalance bars / trade-print winreset, dead-band 50ms) —
+  //          buffers evicted on the coarse cadence only (memory guard; scorer windows itself)
+  if[(null .tr.lastEvict) or curT>.tr.lastEvict+.tr.evictEvery;
+    .tr.histFlow :select from .tr.histFlow  where recvTs>=curT-.tr.retain;
+    .tr.histPrice:select from .tr.histPrice where recvTs>=curT-.tr.retain;
+    .tr.lastEvict:curT];
   `leadership_session_tflow set
     .score.fromPairs[.comove.calcSessionOn[.tr.histFlow; .tr.dbNs; curT]; curT];
-  // --- 3. TRADE-PRICE scorer (trade-print winreset, same 50ms dead-band) -------
-  .tr.histPrice:select from .tr.histPrice where recvTs>=curT-.tr.retain;
   `leadership_session_tprice set
     .score.fromPairs[.comove.calcSessionOn[.tr.histPrice; .tr.dbNs; curT]; curT];
   // --- regime, health, evict, snapshot -----------------------------------------

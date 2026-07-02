@@ -36,7 +36,7 @@
   d:update prevMid:prev mid by sym,venue,inst from d;     // first row of a leg -> null
   d:update prevMid:seedMid^prevMid from d;                // ...seeded with carried last mid
   d:update moveBps:10000*(mid-prevMid)%prevMid from d;    // null prevMid -> null -> never fires
-  d:update thr:.cfg.threshold each sym from d;            // per-sym bar (override else default)
+  d:update thr:.cfg.threshold sym from d;                 // per-sym bar (override else default; vectorised)
   moves:select sym,venue,inst,recvTs,eventTs,mid,moveBps,direction:?[moveBps>0;`up;`down]
     from d where abs[moveBps]>=thr;
   adv:select mid:last mid, recvTs:last recvTs, eventTs:last eventTs,
@@ -50,8 +50,8 @@
   v:row`v; clk:row`clk;                                   // mid series + window clock (ns) for this leg
   // carried base/anchor, but fall back to this batch's first tick when the leg is new (null carry).
   // NB fill is `default^value`: (first v)^b0 keeps a non-null carried base, else seeds with first v.
-  sb:(first v)^row`b0;
-  st:(first clk)^row`t0;
+  sb:(first v)^row`b0;                                   // seed base value: carried base b0, else this batch's first mid
+  st:(first clk)^row`t0;                                 // seed base time (window anchor, ns): carried t0, else first tick's clk
   r:(.move.staleStep[delta; row`thr; winNs])\[(sb; st; 0; 0n); flip(clk; v)];
   d:`long$r[;2];                                          // per-tick direction (0 = no fire)
   f:where d<>0;
@@ -66,7 +66,7 @@
   winNs:`long$1e6*.cfg.moveWinMs;
   delta:.move.d .cfg.moveBasis;
   // thr fraction: .cfg.threshold is in bps; .move.staleStep compares a raw return (fraction).
-  d:update thr:1e-4*.cfg.threshold each sym from d;
+  d:update thr:1e-4*.cfg.threshold sym from d;
   d:d lj `sym`venue`inst xkey select sym,venue,inst,base,baseTs from 0!.feed.leg;  // carried seed
   g:0!select clk:`long$eventTs, v:mid, rTs:recvTs, eTs:eventTs,
        thr:first thr, b0:first base, t0:first baseTs by sym,venue,inst from d;
@@ -80,10 +80,10 @@
 // seeded from the carried min/max deques (empty => cold start). Window clock = eventTs (transport-
 // immune, as for cumstale). Returns the fired moves AND the advanced deques (carried in .feed.wstate).
 .feed.wrLeg:{[delta;winNs;row]
-  clk:row`clk; v:row`v;
-  mnV0:row`mnV0;                                          // cold start if no real carried deque (lj-null/empty)
-  seed:$[(0=count mnV0) or not 9h=type mnV0; .move.wrSeed; (row`mnT0; mnV0; row`mxT0; row`mxV0; 0; 0n)];
-  r:(.move.wrvStep[delta; row`thr; winNs])\[seed; flip(clk; v)];
+  v:row`v;                                               // mid series (used twice: scan input + fire selection)
+  // cold start if no real carried deque (lj-null/empty). `or` right operand runs first, so mnV0 is set before the count test.
+  seed:$[(0=count mnV0) or 9h<>type mnV0:row`mnV0; .move.wrSeed; (row`mnT0; mnV0; row`mxT0; row`mxV0; 0; 0n)];
+  r:(.move.wrvStep[delta; row`thr; winNs])\[seed; flip(row`clk; v)];
   d:`long$r[;4]; f:where d<>0; lastS:last r;              // fires + final deque state
   `sym`venue`inst`recvTs`eventTs`mid`moveBps`direction`mnT`mnV`mxT`mxV!
     (row`sym; row`venue; row`inst; row[`rTs] f; row[`eTs] f; v f;
@@ -95,7 +95,7 @@
 .feed.detectWinreset:{[d]
   winNs:`long$1e6*.cfg.moveWinMs;
   delta:.move.d .cfg.moveBasis;
-  d:update thr:1e-4*.cfg.threshold each sym from d;
+  d:update thr:1e-4*.cfg.threshold sym from d;
   d:d lj `sym`venue`inst xkey select sym,venue,inst,mnT,mnV,mxT,mxV from 0!.feed.wstate;   // carried deques
   g:0!select clk:`long$eventTs, v:mid, rTs:recvTs, eTs:eventTs, thr:first thr,
        mnT0:first mnT, mnV0:first mnV, mxT0:first mxT, mxV0:first mxV by sym,venue,inst from d;

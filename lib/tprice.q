@@ -24,7 +24,7 @@
 .cfg.tpriceThrBpsDefault:@[value; `.cfg.tpriceThrBpsDefault; 5f];                       // bps
 .cfg.tpriceWinMs        :@[value; `.cfg.tpriceWinMs;         @[value;`.cfg.moveWinMs;500f]];
 
-.tprice.thr:{[s] t:.cfg.tpriceThrBps s; 1e-4*$[null t; .cfg.tpriceThrBpsDefault; t]};   // bps -> fraction
+.tprice.thr:{[s] t:.cfg.tpriceThrBps s; 1e-4*?[null t; .cfg.tpriceThrBpsDefault; t]};   // bps -> fraction; vectorised (?[])
 .tprice.winNs:`long$1e6*.cfg.tpriceWinMs;
 .tprice.delta:.move.d`log;                              // log basis, as the quote winreset (B8)
 
@@ -45,7 +45,7 @@
 .tprice.detect:{[d]
   if[not count d; :.tprice.mv0];
   d:`recvTs xasc d;
-  d:update thr:.tprice.thr each sym from d;             // per-sym bar (already a fraction)
+  d:update thr:.tprice.thr sym from d;                  // per-sym bar (already a fraction; vectorised)
   d:d lj `sym`venue`inst xkey select sym,venue,inst,mnT,mnV,mxT,mxV from 0!.tprice.wstate;  // carried deques
   g:0!select clk:`long$eventTs, v:price, rTs:recvTs, eTs:eventTs, thr:first thr,
        mnT0:first mnT, mnV0:first mnV, mxT0:first mxT, mxV0:first mxV by sym,venue,inst from d;
